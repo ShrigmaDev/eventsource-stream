@@ -16,7 +16,7 @@ use nom::error::Error as NomError;
 use pin_project_lite::pin_project;
 
 #[derive(Default, Debug)]
-pub struct EventBuilder {
+struct EventBuilder {
     event: Event,
     is_complete: bool,
 }
@@ -207,7 +207,7 @@ where
 #[cfg(feature = "std")]
 impl<E> std::error::Error for EventStreamError<E> where E: fmt::Display + fmt::Debug + Send + Sync {}
 
-pub fn parse_event<E>(
+fn parse_event<E>(
     buffer: &mut String,
     builder: &mut EventBuilder,
 ) -> Result<Option<Event>, EventStreamError<E>> {
@@ -219,7 +219,10 @@ pub fn parse_event<E>(
             Ok((rem, next_line)) => {
                 builder.add(next_line);
                 let consumed = buffer.len() - rem.len();
-                buffer.drain(..consumed);
+                // drain avoids any allocations, unlike split_off
+                // buffer.drain(..consumed);
+                let rem = buffer.split_off(consumed);
+                *buffer = rem;
                 if builder.is_complete {
                     if let Some(event) = builder.dispatch() {
                         return Ok(Some(event));

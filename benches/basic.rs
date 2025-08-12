@@ -1,65 +1,36 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use eventsource_stream::{EventBuilder, parse_event};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion};
+use eventsource_stream::EventStream;
+use futures::prelude::*;
 
-fn criterion_benchmark(c: &mut Criterion) {
-    // Create a benchmark group for parse_event
-    let mut group = c.benchmark_group("parse_event");
+fn benchmark_event_stream(c: &mut Criterion) {
+    let event_template = r#"event: live
+data: {"Ts":1754977913936,"Prices":[1.270,1.770,1.370],"PriceNames":["hd","ad","ha"],"MarketParameters":null,"MarketPeriod":null,"SuperOddsType":"DOUBLECHANCE_PARTICIPANT_RESULT","MessageId":"1790299788:00003:000141","StartTime":"2025-08-23T16:30:00Z","IsTeam":true,"InRunning":false,"BookmakerId":539,"Participant1IsHome":true,"FixtureId":16924188}
 
-    // Simple event with just data
-    let simple_event = "data: Hello, world!\n\n";
-    group.bench_function("simple_event", |b| {
+"#;
+
+    let mut event_data_vec = Vec::with_capacity(300);
+    for i in 0..300 {
+        // Create a slightly different event for each iteration to avoid any potential optimizations
+        let modified_event = event_template.replace("MessageId\":\"1790299788:00003:000141", 
+                                                   &format!("MessageId\":\"1790299788:00003:{:06}", i));
+        event_data_vec.push(Ok::<_, ()>(modified_event));
+    }
+
+    c.bench_function("parse_300_live_events", |b| {
         b.iter(|| {
-            let mut buffer = String::from(black_box(simple_event));
-            let mut builder = Default::default();
-            parse_event::<()>(&mut buffer, &mut builder)
+            futures::executor::block_on(async {
+                let stream = futures::stream::iter(event_data_vec.clone());
+                let events = EventStream::new(stream)
+                    .try_collect::<Vec<_>>()
+                    .await
+                    .unwrap();
+
+                black_box(events);
+            })
         })
     });
-
-    // Event with multiple fields
-    let complex_event = "event: update\ndata: {\"status\": \"success\"}\nid: 1\n\n";
-    group.bench_function("complex_event", |b| {
-        b.iter(|| {
-            let mut buffer = String::from(black_box(complex_event));
-            let mut builder = Default::default();
-            parse_event::<()>(&mut buffer, &mut builder)
-        })
-    });
-
-    // Multiple events in one buffer
-    let multiple_events = "data: First event\n\ndata: Second event\n\n";
-    group.bench_function("multiple_events", |b| {
-        b.iter(|| {
-            let mut buffer = String::from(black_box(multiple_events));
-            let mut builder = Default::default();
-            // Parse first event
-            let _ = parse_event::<()>(&mut buffer, &mut builder);
-            // Parse second event
-            parse_event::<()>(&mut buffer, &mut builder)
-        })
-    });
-
-    // Event with comments
-    let event_with_comments = ": This is a comment\ndata: Event with comment\n\n";
-    group.bench_function("event_with_comments", |b| {
-        b.iter(|| {
-            let mut buffer = String::from(black_box(event_with_comments));
-            let mut builder = Default::default();
-            parse_event::<()>(&mut buffer, &mut builder)
-        })
-    });
-
-    // Incomplete event (should return None)
-    let incomplete_event = "data: Incomplete event\n";
-    group.bench_function("incomplete_event", |b| {
-        b.iter(|| {
-            let mut buffer = String::from(black_box(incomplete_event));
-            let mut builder = Default::default();
-            parse_event::<()>(&mut buffer, &mut builder)
-        })
-    });
-
-    group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, benchmark_event_stream);
 criterion_main!(benches);
