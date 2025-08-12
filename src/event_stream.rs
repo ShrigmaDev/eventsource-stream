@@ -220,9 +220,7 @@ fn parse_event<E>(
                 builder.add(next_line);
                 let consumed = buffer.len() - rem.len();
                 // drain avoids any allocations, unlike split_off
-                // buffer.drain(..consumed);
-                let rem = buffer.split_off(consumed);
-                *buffer = rem;
+                buffer.drain(..consumed);
                 if builder.is_complete {
                     if let Some(event) = builder.dispatch() {
                         return Ok(Some(event));
